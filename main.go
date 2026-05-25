@@ -20,8 +20,9 @@ func main() {
 	}
 
 	provider := flag.String("provider", "", "AI provider to use (groq or gemini)")
-	apiKey := flag.String("key", "", "API key for the provider")
 	flag.Parse()
+
+	apiKeyEnv := os.Getenv("DEPROMPT_API_KEY")
 
 	if flag.NArg() != 1 {
 		printDividerError("image path is required as a positional argument")
@@ -42,8 +43,8 @@ func main() {
 	}
 
 	k := cfg.Key
-	if *apiKey != "" {
-		k = *apiKey
+	if apiKeyEnv != "" {
+		k = apiKeyEnv
 	}
 
 	if p == "" || k == "" {
