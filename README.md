@@ -171,7 +171,7 @@ go run main.go api.go image.go config.go ui.go -- --provider groq --key YOUR_KEY
 
 ## License
 
-MIT — see [LICENSE](LICENSE) for details.
+GNU General Public License v3.0 — see [LICENSE](LICENSE) for details.
 
 ---
 
