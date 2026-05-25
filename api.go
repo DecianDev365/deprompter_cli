@@ -7,7 +7,10 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 )
+
+var httpClient = &http.Client{Timeout: 30 * time.Second}
 
 const systemInstruction = "You are an expert AI image prompt reverse engineer with deep knowledge of Midjourney, DALL-E, Stable Diffusion, and Flux. Analyze this image and reconstruct the most accurate and detailed prompt that could have generated it. Return only the prompt text, nothing else. Make it detailed enough that someone could paste it directly into Midjourney, DALL-E, or Stable Diffusion and get a very similar result."
 
@@ -84,7 +87,7 @@ func groqPrompt(apiKey, base64Image, mimeType string) (string, error) {
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("groq API request failed: %w", err)
 	}
@@ -163,7 +166,7 @@ func geminiPrompt(apiKey, base64Image, mimeType string) (string, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-goog-api-key", apiKey)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("gemini API request failed: %w", err)
 	}
@@ -247,7 +250,7 @@ func generatePromptFromOpenRouter(apiKey, imageBase64, mimeType string) (string,
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("openrouter API request failed: %w", err)
 	}

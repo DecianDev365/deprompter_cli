@@ -7,8 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
-	"unsafe"
 )
 
 type Config struct {
@@ -115,52 +113,30 @@ func RunSetup() (Config, error) {
 func selectProvider() string {
 	providers := []string{"groq", "gemini", "openrouter"}
 	labels := []string{"Groq", "Google Gemini", "OpenRouter"}
-	selected := 0
 
-	fd := int(os.Stdin.Fd())
-	var oldState syscall.Termios
-	syscall.Syscall6(syscall.SYS_IOCTL, uintptr(fd), syscall.TIOCGETA, uintptr(unsafe.Pointer(&oldState)), 0, 0, 0)
-
-	newState := oldState
-	newState.Lflag &^= syscall.ECHO | syscall.ICANON
-	newState.Cc[syscall.VMIN] = 1
-	newState.Cc[syscall.VTIME] = 0
-	syscall.Syscall6(syscall.SYS_IOCTL, uintptr(fd), syscall.TIOCSETA, uintptr(unsafe.Pointer(&newState)), 0, 0, 0)
-	defer syscall.Syscall6(syscall.SYS_IOCTL, uintptr(fd), syscall.TIOCSETA, uintptr(unsafe.Pointer(&oldState)), 0, 0, 0)
-
-	printBold("Select your AI provider")
-	fmt.Println()
-	drawMenu(selected, labels)
-	fmt.Printf("  %sUse ↑/↓ to navigate, Enter to select%s\n", colorGray, colorReset)
-
-	menuLines := 4 + len(labels)
+	reader := bufio.NewReader(os.Stdin)
 
 	for {
-		key, err := readKeyRaw()
-		if err != nil {
-			break
-		}
-
-		switch key {
-		case "up":
-			selected = (selected - 1 + len(providers)) % len(providers)
-		case "down":
-			selected = (selected + 1) % len(providers)
-		case "enter":
-			fmt.Printf("\033[%dA\033[J", menuLines)
-			return providers[selected]
-		default:
-			continue
-		}
-
-		fmt.Printf("\033[%dA\033[J", menuLines)
 		printBold("Select your AI provider")
 		fmt.Println()
-		drawMenu(selected, labels)
-		fmt.Printf("  %sUse ↑/↓ to navigate, Enter to select%s\n", colorGray, colorReset)
-	}
+		for i, label := range labels {
+			fmt.Printf("  %d. %s\n", i+1, label)
+		}
+		fmt.Println()
+		fmt.Printf("  %s›%s ", colorOrange, colorReset)
 
-	return providers[selected]
+		input, _ := reader.ReadString('\n')
+		input = strings.TrimSpace(input)
+
+		switch input {
+		case "1":
+			return providers[0]
+		case "2":
+			return providers[1]
+		case "3":
+			return providers[2]
+		}
+	}
 }
 
 func drawMenu(selected int, labels []string) {
