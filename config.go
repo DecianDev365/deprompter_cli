@@ -113,8 +113,8 @@ func RunSetup() (Config, error) {
 }
 
 func selectProvider() string {
-	providers := []string{"groq", "gemini"}
-	labels := []string{"Groq", "Google Gemini"}
+	providers := []string{"groq", "gemini", "openrouter"}
+	labels := []string{"Groq", "Google Gemini", "OpenRouter"}
 	selected := 0
 
 	fd := int(os.Stdin.Fd())

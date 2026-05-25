@@ -17,6 +17,8 @@ func GeneratePrompt(provider, apiKey, base64Image, mimeType string) (string, err
 		return groqPrompt(apiKey, base64Image, mimeType)
 	case "gemini":
 		return geminiPrompt(apiKey, base64Image, mimeType)
+	case "openrouter":
+		return generatePromptFromOpenRouter(apiKey, base64Image, mimeType)
 	default:
 		return "", fmt.Errorf("unsupported provider: %s (use groq or gemini)", provider)
 	}
@@ -182,4 +184,85 @@ func geminiPrompt(apiKey, base64Image, mimeType string) (string, error) {
 		return "", fmt.Errorf("gemini returned no content parts")
 	}
 	return strings.TrimSpace(gr.Candidates[0].Content.Parts[0].Text), nil
+}
+
+type openrouterMessage struct {
+	Role    string              `json:"role"`
+	Content []openrouterContent `json:"content"`
+}
+
+type openrouterContent struct {
+	Type     string             `json:"type"`
+	Text     string             `json:"text,omitempty"`
+	ImageURL *openrouterImageURL `json:"image_url,omitempty"`
+}
+
+type openrouterImageURL struct {
+	URL string `json:"url"`
+}
+
+type openrouterRequest struct {
+	Model    string              `json:"model"`
+	Messages []openrouterMessage `json:"messages"`
+}
+
+type openrouterResponse struct {
+	Choices []struct {
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
+	} `json:"choices"`
+}
+
+func generatePromptFromOpenRouter(apiKey, imageBase64, mimeType string) (string, error) {
+	body := openrouterRequest{
+		Model: "meta-llama/llama-4-scout",
+		Messages: []openrouterMessage{
+			{
+				Role: "user",
+				Content: []openrouterContent{
+					{
+						Type: "text",
+						Text: systemInstruction,
+					},
+					{
+						Type:     "image_url",
+						ImageURL: &openrouterImageURL{URL: fmt.Sprintf("data:%s;base64,%s", mimeType, imageBase64)},
+					},
+				},
+			},
+		},
+	}
+
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", "https://openrouter.ai/api/v1/chat/completions", bytes.NewReader(payload))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("openrouter API request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("openrouter API returned status %d: %s", resp.StatusCode, string(raw))
+	}
+
+	var or openrouterResponse
+	if err := json.Unmarshal(raw, &or); err != nil {
+		return "", fmt.Errorf("failed to parse openrouter response: %w", err)
+	}
+	if len(or.Choices) == 0 {
+		return "", fmt.Errorf("openrouter returned no choices")
+	}
+	return strings.TrimSpace(or.Choices[0].Message.Content), nil
 }
