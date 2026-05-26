@@ -187,7 +187,7 @@ func drawMenu(selected int, labels []string) {
 	for i, label := range labels {
 		fmt.Print("\033[K")
 		if i == selected {
-			fmt.Printf("   %s> %s%s\n", colorOrange, label, colorReset)
+			fmt.Printf("  %s> %s%s\n", colorOrange, label, colorReset)
 		} else {
 			fmt.Printf("    %s\n", label)
 		}
