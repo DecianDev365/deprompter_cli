@@ -6,14 +6,95 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"time"
+
+	"github.com/charmbracelet/bubbles/spinner"
+	tea "github.com/charmbracelet/bubbletea"
 )
+
+type promptResultMsg struct {
+	prompt string
+	err    error
+}
+
+type mainModel struct {
+	spinner  spinner.Model
+	loading  bool
+	done     bool
+	err      error
+	prompt   string
+	imagePath string
+	provider string
+	apiKey   string
+	base64Img string
+	mimeType string
+}
+
+func newMainModel(provider, apiKey, base64Img, mimeType, imagePath string) mainModel {
+	s := spinner.New()
+	s.Style = spinnerStyle
+	s.Spinner = spinner.Dot
+
+	return mainModel{
+		spinner:   s,
+		loading:   true,
+		imagePath: imagePath,
+		provider:  provider,
+		apiKey:    apiKey,
+		base64Img: base64Img,
+		mimeType:  mimeType,
+	}
+}
+
+func (m mainModel) Init() tea.Cmd {
+	return tea.Batch(
+		m.spinner.Tick,
+		func() tea.Msg {
+			prompt, err := GeneratePrompt(m.provider, m.apiKey, m.base64Img, m.mimeType)
+			return promptResultMsg{prompt, err}
+		},
+	)
+}
+
+func (m mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
+
+	case promptResultMsg:
+		m.loading = false
+		if msg.err != nil {
+			m.err = msg.err
+		} else {
+			m.prompt = msg.prompt
+			m.done = true
+		}
+		return m, tea.Quit
+
+	case tea.KeyMsg:
+		if msg.String() == "ctrl+c" {
+			return m, tea.Quit
+		}
+	}
+
+	return m, nil
+}
+
+func (m mainModel) View() string {
+	if m.err != nil {
+		return fmt.Sprintf("\n%s\n\n", errorStyle.Render("  ✗ Error: "+m.err.Error()))
+	}
+	if m.done {
+		return fmt.Sprintf("\n  %s\n\n  %s\n\n", successStyle.Render("✓ Prompt generated"), mutedStyle.Render("✓ Copied to clipboard"))
+	}
+	return fmt.Sprintf("\n  %s %s\n\n", m.spinner.View(), mutedStyle.Render("Analyzing "+m.imagePath))
+}
 
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "config" {
 		_, err := RunSetup()
 		if err != nil {
-			printDividerError(err.Error())
 			os.Exit(1)
 		}
 		return
@@ -25,7 +106,7 @@ func main() {
 	apiKeyEnv := os.Getenv("DEPROMPT_API_KEY")
 
 	if flag.NArg() != 1 {
-		printDividerError("image path is required as a positional argument")
+		fmt.Fprintf(os.Stderr, "Error: image path is required as a positional argument\n")
 		flag.Usage()
 		os.Exit(1)
 	}
@@ -33,7 +114,7 @@ func main() {
 
 	cfg, err := LoadConfig()
 	if err != nil {
-		printDividerError(err.Error())
+		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -50,7 +131,6 @@ func main() {
 	if p == "" || k == "" {
 		cfg, err = RunSetup()
 		if err != nil {
-			printDividerError(err.Error())
 			os.Exit(1)
 		}
 		if p == "" {
@@ -63,52 +143,27 @@ func main() {
 
 	base64Img, mimeType, err := EncodeImage(imagePath)
 	if err != nil {
-		printDividerError(err.Error())
+		fmt.Fprintf(os.Stderr, "Error encoding image: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Fprintf(os.Stderr, "  %s%s%s\n", colorGray, "─────────────────────────────────────────", colorReset)
+	model := newMainModel(p, k, base64Img, mimeType, imagePath)
+	program := tea.NewProgram(model, tea.WithOutput(os.Stderr))
 
-	running := true
-	go func() {
-		frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
-		i := 0
-		for {
-			if !running {
-				fmt.Fprintf(os.Stderr, "\r%s\r", strings.Repeat(" ", 80))
-				return
-			}
-			fmt.Fprintf(os.Stderr, "\r  %s%s%s Analyzing %s", colorOrange, frames[i], colorReset, imagePath)
-			i = (i + 1) % len(frames)
-			time.Sleep(80 * time.Millisecond)
-		}
-	}()
-
-	prompt, err := GeneratePrompt(p, k, base64Img, mimeType)
-	running = false
-	time.Sleep(15 * time.Millisecond)
-
+	finalModel, err := program.Run()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "\r%s\r", strings.Repeat(" ", 80))
-		printDividerError(err.Error())
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Fprintf(os.Stderr, "  %s%s✓ Prompt generated%s\n", colorBold, colorGreen, colorReset)
-	fmt.Fprintf(os.Stderr, "\n")
-	fmt.Printf("  %s%s%s\n", colorWhite, prompt, colorReset)
-	fmt.Fprintf(os.Stderr, "\n")
-	fmt.Fprintf(os.Stderr, "  %s%s%s\n", colorGray, "─────────────────────────────────────────", colorReset)
-	fmt.Fprintf(os.Stderr, "  %s✓ Copied to clipboard%s\n", colorGreen, colorReset)
-	fmt.Fprintf(os.Stderr, "  %s%s%s\n", colorGray, "─────────────────────────────────────────", colorReset)
+	m := finalModel.(mainModel)
+	if m.err != nil {
+		os.Exit(1)
+	}
+
+	fmt.Println(m.prompt)
 
 	cmd := exec.Command("pbcopy")
-	cmd.Stdin = strings.NewReader(prompt)
+	cmd.Stdin = strings.NewReader(m.prompt)
 	cmd.Run()
-}
-
-func printDividerError(msg string) {
-	fmt.Fprintf(os.Stderr, "  %s%s%s\n", colorGray, "─────────────────────────────────────────", colorReset)
-	fmt.Fprintf(os.Stderr, "  %s✗ Error: %s%s\n", colorRed, msg, colorReset)
-	fmt.Fprintf(os.Stderr, "  %s%s%s\n", colorGray, "─────────────────────────────────────────", colorReset)
 }

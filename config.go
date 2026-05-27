@@ -1,14 +1,14 @@
 package main
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
-	"unsafe"
+
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 type Config struct {
@@ -62,166 +62,153 @@ func SaveConfig(cfg Config) error {
 	return nil
 }
 
-func RunSetup() (Config, error) {
-	reader := bufio.NewReader(os.Stdin)
+type setupModel struct {
+	state     int
+	providers []string
+	labels    []string
+	cursor    int
+	textInput textinput.Model
+	cfg       Config
+	err       error
+	done      bool
+}
 
-	printOrange("██████  ███████ ██████  ██████   ██████  ███    ███ ██████  ████████")
-	printOrange("██   ██ ██      ██   ██ ██   ██ ██    ██ ████  ████ ██   ██    ██")
-	printOrange("██   ██ █████   ██████  ██████  ██    ██ ██ ████ ██ ██████     ██")
-	printOrange("██   ██ ██      ██      ██   ██ ██    ██ ██  ██  ██ ██         ██")
-	printOrange("██████  ███████ ██      ██   ██  ██████  ██      ██ ██         ██")
-	fmt.Println()
-	printGray("reverse engineer any image into a prompt")
-	printDivider()
-	printBold("Setup")
-	printDivider()
-	fmt.Println()
-	provider := selectProvider()
+func initialSetupModel() setupModel {
+	ti := textinput.New()
+	ti.Placeholder = "paste your API key here..."
+	ti.CharLimit = 512
+	ti.Width = 60
 
-	fmt.Printf("  %s✓%s %sProvider   %s%s%s\n", colorGreen, colorReset, colorGray, colorReset, colorOrange, provider)
-	fmt.Println()
-	printBold("API Key")
-	fmt.Printf("  %s›%s ", colorOrange, colorReset)
-	var key string
-	for {
-		key, _ = reader.ReadString('\n')
-		key = strings.TrimSpace(key)
-		if key == "" {
-			fmt.Printf("  %sAPI key cannot be empty. Please enter your API key.%s\n", colorRed, colorReset)
-			fmt.Printf("  %s›%s ", colorOrange, colorReset)
-			continue
+	return setupModel{
+		state:     0,
+		providers: []string{"groq", "gemini", "openrouter"},
+		labels:    []string{"Groq", "Google Gemini", "OpenRouter"},
+		cursor:    0,
+		textInput: ti,
+	}
+}
+
+func (m setupModel) Init() tea.Cmd {
+	return nil
+}
+
+func (m setupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "ctrl+c":
+			return m, tea.Quit
+
+		case "enter":
+			if m.state == 0 {
+				m.cfg.Provider = m.providers[m.cursor]
+				m.state = 1
+				m.textInput.Focus()
+				return m, textinput.Blink
+			} else if m.state == 1 {
+				key := strings.TrimSpace(m.textInput.Value())
+				if key == "" {
+					return m, nil
+				}
+				m.cfg.Key = key
+				if err := SaveConfig(m.cfg); err != nil {
+					m.err = err
+				}
+				m.done = true
+				return m, tea.Quit
+			}
+
+		case "up", "k":
+			if m.state == 0 && m.cursor > 0 {
+				m.cursor--
+			}
+
+		case "down", "j":
+			if m.state == 0 && m.cursor < len(m.labels)-1 {
+				m.cursor++
+			}
 		}
-		break
 	}
 
-	fmt.Printf("  %s✓%s %sAPI Key    %s%s%s\n", colorGreen, colorReset, colorGray, colorReset, colorOrange, "saved")
-	fmt.Println()
+	if m.state == 1 {
+		var cmd tea.Cmd
+		m.textInput, cmd = m.textInput.Update(msg)
+		return m, cmd
+	}
 
-	cfg := Config{Provider: provider, Key: key}
-	if err := SaveConfig(cfg); err != nil {
+	return m, nil
+}
+
+func (m setupModel) View() string {
+	if m.done {
+		view := "\n"
+		if m.err != nil {
+			view += errorStyle.Render("  ✗ Error: " + m.err.Error()) + "\n"
+		} else {
+			view += successStyle.Render("  ✓ You're all set!") + "\n\n"
+			view += mutedStyle.Render(fmt.Sprintf("  Config saved to %s", configPath())) + "\n"
+			view += mutedStyle.Render("  Run deprompt <image.png> to get started") + "\n"
+		}
+		view += "\n"
+		return view
+	}
+
+	view := "\n"
+	view += headerStyle.Render("██████  ███████ ██████  ██████   ██████  ███    ███ ██████  ████████") + "\n"
+	view += headerStyle.Render("██   ██ ██      ██   ██ ██   ██ ██    ██ ████  ████ ██   ██    ██") + "\n"
+	view += headerStyle.Render("██   ██ █████   ██████  ██████  ██    ██ ██ ████ ██ ██████     ██") + "\n"
+	view += headerStyle.Render("██   ██ ██      ██      ██   ██ ██    ██ ██  ██  ██ ██         ██") + "\n"
+	view += headerStyle.Render("██████  ███████ ██      ██   ██  ██████  ██      ██ ██         ██") + "\n"
+	view += "\n"
+	view += mutedStyle.Render("  reverse engineer any image into a prompt") + "\n"
+	view += mutedStyle.Render("  ─────────────────────────────────────────") + "\n"
+	view += titleStyle.Render("  Setup") + "\n"
+	view += mutedStyle.Render("  ─────────────────────────────────────────") + "\n\n"
+
+	if m.state == 0 {
+		view += titleStyle.Render("  Select your AI provider") + "\n\n"
+		for i, label := range m.labels {
+			if i == m.cursor {
+				view += selectedStyle.Render("  ❯ "+label) + "\n"
+			} else {
+				view += itemStyle.Render("    "+label) + "\n"
+			}
+		}
+		view += "\n"
+		view += helpStyle.Render("  ↑/↓ navigate  •  enter select  •  ctrl+c quit")
+	} else if m.state == 1 {
+		view += successStyle.Render("  ✓ Provider: "+m.labels[indexOf(m.providers, m.cfg.Provider)]) + "\n\n"
+		view += titleStyle.Render("  API Key") + "\n"
+		view += mutedStyle.Render("  Enter your API key for "+m.cfg.Provider) + "\n\n"
+		view += "  " + m.textInput.View() + "\n\n"
+		view += helpStyle.Render("  enter confirm  •  ctrl+c quit")
+	}
+
+	view += "\n\n"
+	return view
+}
+
+func indexOf(slice []string, val string) int {
+	for i, v := range slice {
+		if v == val {
+			return i
+		}
+	}
+	return 0
+}
+
+func RunSetup() (Config, error) {
+	p := tea.NewProgram(initialSetupModel())
+	m, err := p.Run()
+	if err != nil {
 		return Config{}, err
 	}
-
-	printDivider()
-	fmt.Printf("  %s%s✓ You're all set!%s\n", colorBold, colorGreen, colorReset)
-	fmt.Println()
-	fmt.Printf("  %sConfig saved to %s%s%s\n", colorGray, colorOrange, configPath(), colorReset)
-	fmt.Printf("  %sRun deprompt image.png to get started%s\n", colorGray, colorReset)
-	printDivider()
-
-	return cfg, nil
-}
-
-var stdinReader = bufio.NewReader(os.Stdin)
-
-func rawMode() (func(), error) {
-	var oldState syscall.Termios
-	if _, _, err := syscall.Syscall6(syscall.SYS_IOCTL, os.Stdin.Fd(), syscall.TIOCGETA, uintptr(unsafe.Pointer(&oldState)), 0, 0, 0); err != 0 {
-		return nil, fmt.Errorf("terminal not available")
+	model := m.(setupModel)
+	if model.err != nil {
+		return Config{}, model.err
 	}
-
-	newState := oldState
-	newState.Iflag &^= syscall.IGNBRK | syscall.BRKINT | syscall.PARMRK | syscall.ISTRIP | syscall.INLCR | syscall.IGNCR | syscall.ICRNL | syscall.IXON
-	newState.Lflag &^= syscall.ECHO | syscall.ECHONL | syscall.ICANON | syscall.ISIG | syscall.IEXTEN
-	newState.Cflag &^= syscall.CSIZE | syscall.PARENB
-	newState.Cflag |= syscall.CS8
-	newState.Cc[syscall.VMIN] = 1
-	newState.Cc[syscall.VTIME] = 0
-
-	if _, _, err := syscall.Syscall6(syscall.SYS_IOCTL, os.Stdin.Fd(), syscall.TIOCSETA, uintptr(unsafe.Pointer(&newState)), 0, 0, 0); err != 0 {
-		return nil, fmt.Errorf("failed to set raw mode")
+	if model.cfg.Provider == "" && model.cfg.Key == "" {
+		return Config{}, fmt.Errorf("setup cancelled")
 	}
-
-	return func() {
-		syscall.Syscall6(syscall.SYS_IOCTL, os.Stdin.Fd(), syscall.TIOCSETA, uintptr(unsafe.Pointer(&oldState)), 0, 0, 0)
-		fmt.Print("\033[?25h")
-	}, nil
-}
-
-func selectProvider() string {
-	providers := []string{"groq", "gemini", "openrouter"}
-	labels := []string{"Groq", "Google Gemini", "OpenRouter"}
-	selected := 0
-
-	restore, err := rawMode()
-	if err != nil {
-		fmt.Printf("  %s%s%s\n", colorRed, "error: terminal required for interactive setup", colorReset)
-		os.Exit(1)
-	}
-	defer restore()
-
-	printBold("Select your AI provider")
-	fmt.Println()
-	drawMenu(selected, labels)
-	fmt.Print("\033[?25l")
-
-	for {
-		key, err := readKeyRaw()
-		if err != nil {
-			continue
-		}
-
-		switch key {
-		case "up":
-			if selected > 0 {
-				selected--
-			}
-		case "down":
-			if selected < len(labels)-1 {
-				selected++
-			}
-		case "enter":
-			fmt.Print("\033[?25h")
-			return providers[selected]
-		case "ctrl_c":
-			fmt.Print("\033[?25h")
-			os.Exit(1)
-		}
-
-		fmt.Printf("\033[%dA", len(labels)+1)
-		drawMenu(selected, labels)
-	}
-}
-
-func drawMenu(selected int, labels []string) {
-	for i, label := range labels {
-		fmt.Print("\033[K")
-		if i == selected {
-			fmt.Printf("  %s> %s%s\n", colorOrange, label, colorReset)
-		} else {
-			fmt.Printf("    %s\n", label)
-		}
-	}
-	fmt.Print("\033[K")
-	fmt.Println()
-}
-
-func readKeyRaw() (string, error) {
-	b, err := stdinReader.ReadByte()
-	if err != nil {
-		return "", err
-	}
-
-	switch b {
-	case '\x1b':
-		extra := make([]byte, 2)
-		n, _ := stdinReader.Read(extra)
-		if n >= 2 && extra[0] == '[' {
-			switch extra[1] {
-			case 'A':
-				return "up", nil
-			case 'B':
-				return "down", nil
-			}
-		}
-		return "", nil
-
-	case '\r', '\n':
-		return "enter", nil
-
-	case '\x03':
-		return "ctrl_c", nil
-	}
-
-	return "", nil
+	return model.cfg, nil
 }

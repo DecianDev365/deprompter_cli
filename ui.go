@@ -1,37 +1,29 @@
 package main
 
-import "fmt"
+import "github.com/charmbracelet/lipgloss"
 
-const (
-	colorOrange = "\033[38;5;208m"
-	colorWhite  = "\033[37m"
-	colorGray   = "\033[2m"
-	colorBold   = "\033[1m"
-	colorGreen  = "\033[32m"
-	colorRed    = "\033[31m"
-	colorReset  = "\033[0m"
+var (
+	orange    = lipgloss.Color("#FF8800")
+	green     = lipgloss.Color("#00FF88")
+	red       = lipgloss.Color("#FF4444")
+	gray      = lipgloss.Color("#888888")
+	darkGray  = lipgloss.Color("#444444")
+
+	headerStyle = lipgloss.NewStyle().Bold(true).Foreground(orange)
+
+	successStyle = lipgloss.NewStyle().Bold(true).Foreground(green)
+
+	errorStyle = lipgloss.NewStyle().Bold(true).Foreground(red)
+
+	titleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FFFFFF"))
+
+	selectedStyle = lipgloss.NewStyle().Bold(true).Foreground(orange)
+
+	itemStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#DDDDDD"))
+
+	mutedStyle = lipgloss.NewStyle().Foreground(gray)
+
+	helpStyle = lipgloss.NewStyle().Foreground(darkGray)
+
+	spinnerStyle = lipgloss.NewStyle().Foreground(orange)
 )
-
-func printOrange(text string) {
-	fmt.Printf("  %s%s%s\n", colorOrange, text, colorReset)
-}
-
-func printGray(text string) {
-	fmt.Printf("  %s%s%s\n", colorGray, text, colorReset)
-}
-
-func printGreen(text string) {
-	fmt.Printf("  %s%s%s\n", colorGreen, text, colorReset)
-}
-
-func printRed(text string) {
-	fmt.Printf("  %s%s%s\n", colorRed, text, colorReset)
-}
-
-func printDivider() {
-	fmt.Printf("  %s%s%s\n", colorGray, "─────────────────────────────────────────", colorReset)
-}
-
-func printBold(text string) {
-	fmt.Printf("  %s%s%s%s\n", colorBold, colorWhite, text, colorReset)
-}
