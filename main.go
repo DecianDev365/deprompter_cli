@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
@@ -92,12 +93,18 @@ func (m mainModel) View() string {
 }
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "config" {
-		_, err := RunSetup()
-		if err != nil {
-			os.Exit(1)
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "config":
+			_, err := RunSetup()
+			if err != nil {
+				os.Exit(1)
+			}
+			return
+		case "history":
+			ShowHistory()
+			return
 		}
-		return
 	}
 
 	provider := flag.String("provider", "", "AI provider to use (groq or gemini)")
@@ -160,6 +167,13 @@ func main() {
 	if m.err != nil {
 		os.Exit(1)
 	}
+
+	AppendHistory(HistoryEntry{
+		Prompt:    m.prompt,
+		ImagePath: m.imagePath,
+		Provider:  m.provider,
+		Timestamp: time.Now(),
+	})
 
 	fmt.Println(m.prompt)
 
